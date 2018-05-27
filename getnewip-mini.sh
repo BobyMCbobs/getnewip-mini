@@ -1,100 +1,112 @@
 #!/bin/bash
 
-#variables
-getnewipfolder="$HOME/.getnewip-mini"
-tmpfolder="$HOME/tmp"
-dropboxfolder=""
-pingserver="8.8.8.8"
-purpose=""
-dropboxkey=""
+# getnewip-mini
+
+#
+# Copyright (C) 2018 Caleb Woodbine <github.com/BobyMCbobs>
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
 #
 
-echo "WELCOME to getnewip-mini.
-=============="
+# User variables
+dropboxFolder=""
+pingServer=""
+gniUnit=""
+dropboxAppKey=""
+curlTimeoutTime=3
 
-if [ $getnewipfolder="" ] || [ $tmpfolder="" ] || [ $dropboxfolder="" ] || [ $pingserver="" ] || [ $purpose="" ] || [ $dropboxkey="" ]
+echo "WELCOME to getnewip-mini.sh
+==========================="
+
+function IPfromDB() {
+# download current IP from dropbox
+
+echo "> Downloading copy of IP from dropbox."
+tmpFile=".getnewip-response-$RANDOM-temp"
+newIPnum=$(curl -m $curlTimeoutTime --progress-bar -X POST --globoff -D "$tmpFile" --header "Authorization: Bearer $dropboxAppKey" --header "Dropbox-API-Arg: {\"path\": \"/$dropboxFolder/currentip-$gniUnit.txt\"}" "https://content.dropboxapi.com/2/files/download")
+checkHttpResponse || exit 1
+
+if [[ $newIPnum =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]
 then
-	echo "> Variables not set! Edit this program's variables section then rerun."
-	exit
+	echo "> Downloaded IP successfully."
+	[[ -f $tmpFile ]] && rm $tmpFile
+	return 0
+else
+	echo ">> Download Failed."
+	echo "> Check '$tmpFile' for info."
+	exit 1
+fi
+
+}
+
+function checkHttpResponse() {
+# verify if response was successful
+
+local response
+response=$?
+
+if [ ! $response = 0 ]
+then
+	echo ">> Failed to access dropbox in some way." && return 1
+fi
+
+return 0
+
+}
+
+if [[ -z $dropboxFolder || -z $pingServer || -z $gniUnit || -z $dropboxAppKey || -z $curlTimeoutTime ]]
+then
+	echo ">> Variables not set! Edit this program's variables section then rerun."
+	exit 1
+
+elif [ ! "${#dropboxAppKey}" = 64 ]
+then
+	echo ">> Dropbox app key is invalid."
+	exit 1
+
+elif [[ ! $pingServer =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]
+then
+	echo ">> Ping server must be a vaild IPv4 address."
+	exit 1
+
+elif [[ ! $curlTimeoutTime = [0-9] ]]
+then
+	echo ">> Curl timeout must be vaild"
+	exit 1
+
 fi
 
 #check for required packages
 if ! which curl > /dev/null || ! which stat > /dev/null
 then
-	echo "> Missing packages, installing."
-	apt install coreutils curl -y
+	echo "> Missing packages 'coreutils' and/or 'curl'."
 fi
 
 #test for internet connection
-if ping -q -c 1 -W 1 $pingserver > /dev/null
+if ping -q -c 1 -W 1 $pingServer > /dev/null
 then
 	echo "> Internet is connected, continuing."
 else
-	echo "> No internet, exiting."
-	exit
+	echo ">> No internet, exiting."
+	exit 1
 fi
 
-#if getnewipfolder doesn't exist, create it
-if [ ! -d $getnewipfolder ]
-then
-	echo "> Making bin folder."
-	mkdir -p $getnewipfolder
-fi
-
-#if tmp folder doesn't exist, create it
-if [ ! -d $tmpfolder ]
-then
-	echo "> Making tmp folder."
-	mkdir -p $tmpfolder
-fi
-
-if [ ! -f $HOME/.dropbox_uploader ]
-then
-
-	if echo "OAUTH_ACCESS_TOKEN=$dropboxkey" > $HOME/.dropbox_uploader
-		then
-			echo "> DropBox Uploader config made."
-	fi
-fi
-
-#if dropbox_uploader hasn't been downloaded, download it, and change tmp folder
-if [ ! -f $getnewipfolder/dropbox_uploader.sh ]
-then
-	echo "> Downloading dropbox uploader."
-	if curl "https://raw.githubusercontent.com/andreafabrizi/Dropbox-Uploader/master/dropbox_uploader.sh" -o $getnewipfolder/dropbox_uploader.sh > /dev/null
-	then
-		echo "> Download Complete."
-		chmod +x $getnewipfolder/dropbox_uploader.sh
-		if sed -i "35s#/tmp#$tmpfolder#g" $getnewipfolder/dropbox_uploader.sh
-		then
-			echo "> Modified '$getnewipfolder/dropbox_uploader.sh' with new tmp directory"
-		else
-			echo "> Failed updating '$getnewipfolder/dropbox_uploader.sh' with new tmp directory."
-			exit
-		fi
-	else
-		echo "> Download Failed."
-		exit
-	fi
-fi
-
-#if there is a currentip-*.txt file, remove it
-if [ -f currentip-$purpose.txt ]
-then
-	rm currentip-$purpose.txt
-fi
-
-#download ip into correct folder and check that it's downloaded it
-if cd $getnewipfolder && bash $getnewipfolder/dropbox_uploader.sh download /$dropboxfolder/currentip-$purpose.txt && [ -f currentip-$purpose.txt ]
-then
-	echo "Download Complete."
-else
-	echo "Download Failed."
-	exit
-fi
+IPfromDB
 
 #output it
 echo "
 ==============
-Current IP is '$(cat currentip-$purpose.txt)'.
+Current IP is '$newIPnum'.
 =============="
